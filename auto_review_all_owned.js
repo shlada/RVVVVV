@@ -5,10 +5,10 @@ const axios = require('axios');
 const username = process.env.username;
 const password = process.env.password;
 const shared_secret = process.env.shared;
+const steamApiKey = process.env.STEAM_API_KEY;
 
 const client = new SteamUser();
 
-// 🔁 Review text variations
 const reviewTexts = [
   "Really enjoyed this one!",
   "Fantastic game, loved it.",
@@ -46,27 +46,25 @@ client.on('loggedOn', () => {
 client.on('webSession', async (sessionID, cookies) => {
   console.log("[*] Web session started. Getting owned games...");
 
-  const steamLoginSecure = cookies.find(c => c.startsWith('steamLoginSecure')).split(';')[0];
-
   try {
-    const games = await fetchOwnedGames(client.steamID.getSteamID64(), steamLoginSecure);
+    const games = await fetchOwnedGames(client.steamID.getSteamID64());
     console.log(`[+] Found ${games.length} games.`);
 
-    // Shuffle order
+    // Shuffle order randomly
     games.sort(() => Math.random() - 0.5);
 
     for (const game of games) {
       const reviewText = reviewTexts[Math.floor(Math.random() * reviewTexts.length)];
-      const delay = randomDelay(1, 15); // 1 to 15 min
+      const delay = randomDelay(1, 15); // 1 to 15 min delay
 
       try {
-        await postReview(game.appid, sessionID, steamLoginSecure, reviewText);
+        await postReview(game.appid, sessionID, cookies, reviewText);
         console.log(`[✓] Reviewed: ${game.name || 'AppID ' + game.appid} (${game.appid})`);
       } catch (err) {
         console.warn(`[!] Failed review on AppID ${game.appid}: ${err.message}`);
       }
 
-      console.log(`⏳ Waiting ${Math.floor(delay / 60000)} min...`);
+      console.log(`⏳ Waiting ${Math.floor(delay / 60000)} minutes before next review...`);
       await sleep(delay);
     }
 
@@ -88,23 +86,25 @@ function randomDelay(minMinutes, maxMinutes) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-async function fetchOwnedGames(steamID64, steamLoginSecure) {
-  const url = `https://store.steampowered.com/dynamicstore/userdata/`;
+async function fetchOwnedGames(steamID64) {
+  const url = `https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/?key=${steamApiKey}&steamid=${steamID64}&include_appinfo=true&include_played_free_games=true`;
 
-  const res = await axios.get(url, {
-    headers: {
-      'Cookie': `steamLoginSecure=${steamLoginSecure}`,
-      'User-Agent': 'Mozilla/5.0'
-    }
-  });
+  const res = await axios.get(url);
+  if (!res.data.response || !res.data.response.games) throw new Error("Could not retrieve games.");
 
-  if (!res.data || !res.data.rgOwnedApps) throw new Error("Could not parse owned games.");
-
-  const appIDs = res.data.rgOwnedApps;
-  return appIDs.map(id => ({ appid: id }));
+  return res.data.response.games.map(game => ({
+    appid: game.appid,
+    name: game.name
+  }));
 }
 
-async function postReview(appid, sessionID, steamLoginSecure, text) {
+async function postReview(appid, sessionID, cookies, text) {
+  // Extract sessionid cookie value from cookies array
+  const sessionidCookie = cookies.find(c => c.startsWith('sessionid='));
+  const sessionid = sessionidCookie ? sessionidCookie.split('=')[1].split(';')[0] : sessionID;
+
+  const cookieString = cookies.join('; ');
+
   const url = 'https://store.steampowered.com/friends/recommendgame/';
   const form = new URLSearchParams({
     appid,
@@ -113,13 +113,14 @@ async function postReview(appid, sessionID, steamLoginSecure, text) {
     is_public: 'true',
     received_compensation: 'false',
     language: 'english',
-    sessionid: sessionID
+    sessionid
   });
 
   await axios.post(url, form.toString(), {
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
-      'Cookie': `sessionid=${sessionID}; ${steamLoginSecure}`
+      'Cookie': cookieString,
+      'User-Agent': 'Mozilla/5.0'
     }
   });
 }
