@@ -1,1 +1,16 @@
-
+{
+  "name": "steam-auto-review-bot",
+  "version": "1.0.0",
+  "description": "Automatically reviews all owned Steam games with random delays and messages.",
+  "main": "auto_review_all_owned.js",
+  "scripts": {
+    "start": "node auto_review_all_owned.js"
+  },
+  "author": "Shinda",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "steam-totp": "^2.1.2",
+    "steam-user": "^4.24.0"
+  }
+}
